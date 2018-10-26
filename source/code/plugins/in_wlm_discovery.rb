@@ -42,29 +42,31 @@ module Fluent
     end
 
     def discover
-      omi_lib = WLM::WLMOMIDiscoveryCollector.new(@omi_mapping_path)
-      discovery_data = omi_lib.get_discovery_data()
-      wlm_formatter = WLM::WLMDataFormatter.new(@wlm_class_file)
-      discovery_data.each do |wclass|
-	if wclass["class_name"].to_s == "Universal Linux Computer"
-          wclass["discovery_data"][0]["CSName"] = OMS::Common.get_fully_qualified_domain_name
-	end
-        discovery_xml = wlm_formatter.get_discovery_xml(wclass)
-        instance = {}
-        instance["Host"] = OMS::Common.get_fully_qualified_domain_name
-        instance["OSType"] = "Linux"
-        instance["ObjectName"] = wclass["class_name"]
-        instance["EncodedDataItem"] = Base64.strict_encode64(discovery_xml)
-        wrapper = {
-          "DataType"=>"WLM_LINUX_INSTANCE_DATA_BLOB",
-          "IPName"=>"InfrastructureInsights",
-          "DataItems"=>[instance]
-        }
-        router.emit("oms.wlm.discovery", Time.now.to_f, wrapper)
-      end # each
-      update_discovery_time(Time.now.to_i)
-      $log.debug "Discovery data for #{@omi_mapping_path} generated successfully"
-      get_vm_metadata()
+      is_azure_vm = get_vm_metadata()
+      if is_azure_vm
+        omi_lib = WLM::WLMOMIDiscoveryCollector.new(@omi_mapping_path)
+        discovery_data = omi_lib.get_discovery_data()
+        wlm_formatter = WLM::WLMDataFormatter.new(@wlm_class_file)
+        discovery_data.each do |wclass|
+	  if wclass["class_name"].to_s == "Universal Linux Computer"
+            wclass["discovery_data"][0]["CSName"] = OMS::Common.get_fully_qualified_domain_name
+	  end
+          discovery_xml = wlm_formatter.get_discovery_xml(wclass)
+          instance = {}
+          instance["Host"] = OMS::Common.get_fully_qualified_domain_name
+          instance["OSType"] = "Linux"
+          instance["ObjectName"] = wclass["class_name"]
+          instance["EncodedDataItem"] = Base64.strict_encode64(discovery_xml)
+          wrapper = {
+            "DataType"=>"WLM_LINUX_INSTANCE_DATA_BLOB",
+            "IPName"=>"InfrastructureInsights",
+            "DataItems"=>[instance]
+          }
+          router.emit("oms.wlm.discovery", Time.now.to_f, wrapper)
+        end # each
+        update_discovery_time(Time.now.to_i)
+        $log.debug "Discovery data for #{@omi_mapping_path} generated successfully"
+      end 
     end # method discover
 
     def run_periodic
@@ -136,9 +138,15 @@ module Fluent
           "DataItems"=>[metadata_instance]
         }
         router.emit("oms.wlm.vm.metadata", Time.now.to_f, wrapper)
+        if metadata_json.nil? 
+          return false
+        else
+          return true
       rescue => e
         $log.error "Error sending VM metadata #{e}"
+        return false
       end # begin
+
     end # method get_vm_metadata
 
   end # class WLMOMIDiscovery
